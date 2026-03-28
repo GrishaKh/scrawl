@@ -1,6 +1,6 @@
 """Data-driven block definitions for full Scratch 3.0 coverage.
 
-~129 blocks across 10 categories (Events, Motion, Looks, Sound, Control,
+~137 blocks across 10 categories (Events, Motion, Looks, Sound, Control,
 Data, Operators, Sensing, Pen, Music).
 Adding a new block = adding one BlockDef entry here.
 """
@@ -72,6 +72,23 @@ EVENT_BLOCKS: list[BlockDef] = [
         shape=BlockShape.HAT,
         inputs=[InputSpec("VALUE", "number", "10", 4)],
         fields=[FieldSpec("WHENGREATERTHANMENU", "greater_than_menu")],
+        has_next=True,
+    ),
+    BlockDef(
+        pattern="when stage clicked",
+        opcode="event_whenstageclicked",
+        shape=BlockShape.HAT,
+        has_next=True,
+    ),
+    BlockDef(
+        pattern="when I am touching [TOUCHINGOBJECTMENU v]",
+        opcode="event_whentouchingobject",
+        shape=BlockShape.HAT,
+        menu=MenuSpec(
+            "sensing_touchingobjectmenu",
+            "TOUCHINGOBJECTMENU",
+            "TOUCHINGOBJECTMENU",
+        ),
         has_next=True,
     ),
 ]
@@ -320,6 +337,12 @@ LOOKS_BLOCKS: list[BlockDef] = [
         pattern="next backdrop",
         opcode="looks_nextbackdrop",
         shape=BlockShape.STACK,
+    ),
+    BlockDef(
+        pattern="switch backdrop to [BACKDROP v] and wait",
+        opcode="looks_switchbackdroptoandwait",
+        shape=BlockShape.STACK,
+        menu=MenuSpec("looks_backdrops", "BACKDROP", "BACKDROP"),
     ),
     BlockDef(
         pattern="go to [FRONT_BACK v] layer",
@@ -1016,6 +1039,18 @@ MUSIC_BLOCKS: list[BlockDef] = [
         opcode="music_setTempo",
         shape=BlockShape.STACK,
         inputs=[InputSpec("TEMPO", "number", "60", 4)],
+    ),
+    BlockDef(
+        pattern="change tempo by (TEMPO)",
+        opcode="music_changeTempo",
+        shape=BlockShape.STACK,
+        inputs=[InputSpec("TEMPO", "number", "20", 4)],
+    ),
+    BlockDef(
+        pattern="set instrument to [INSTRUMENT v]",
+        opcode="music_setInstrument",
+        shape=BlockShape.STACK,
+        menu=MenuSpec("music_menu_INSTRUMENT", "INSTRUMENT", "INSTRUMENT"),
     ),
     BlockDef(
         pattern="tempo",
