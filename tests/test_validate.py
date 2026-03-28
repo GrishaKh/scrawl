@@ -1,0 +1,148 @@
+"""Tests for scrawl.validate — validation rules."""
+
+import copy
+import pytest
+
+from scrawl.model import ScratchProject
+from scrawl.validate import validate_project
+
+
+class TestValidProject:
+    def test_minimal_project_is_valid(self, minimal_project_data):
+        project = ScratchProject(minimal_project_data)
+        issues = validate_project(project)
+        errors = [i for i in issues if i.severity == "error"]
+        assert len(errors) == 0
+
+    def test_real_project_is_valid(self, real_project_path):
+        project = ScratchProject.from_file(real_project_path / "project.json")
+        issues = validate_project(project)
+        errors = [i for i in issues if i.severity == "error"]
+        assert len(errors) == 0
+
+
+class TestStructureChecks:
+    def test_missing_targets(self):
+        project = ScratchProject({"meta": {}})
+        issues = validate_project(project)
+        msgs = [i.message for i in issues if i.severity == "error"]
+        assert any("targets" in m for m in msgs)
+
+    def test_empty_targets(self):
+        project = ScratchProject({"targets": [], "meta": {}})
+        issues = validate_project(project)
+        msgs = [i.message for i in issues if i.severity == "error"]
+        assert any("non-empty" in m for m in msgs)
+
+    def test_missing_meta_is_warning(self):
+        project = ScratchProject({"targets": [{"isStage": True, "name": "Stage", "costumes": [{"md5ext": "a.svg"}], "blocks": {}}]})
+        issues = validate_project(project)
+        warnings = [i for i in issues if i.severity == "warning"]
+        assert any("meta" in w.message for w in warnings)
+
+
+class TestStageIsFirst:
+    def test_stage_not_first(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"].reverse()  # Put sprite first
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("isStage" in i.message for i in issues if i.severity == "error")
+
+
+class TestCostumesExist:
+    def test_no_costumes(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["costumes"] = []
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("no costumes" in i.message for i in issues if i.severity == "error")
+
+
+class TestAssetChecks:
+    def test_missing_asset_file(self, minimal_project_dir):
+        import os
+        # Delete one asset file
+        (minimal_project_dir / "bcf454acf82e4504149f7ffe07081dbc.svg").unlink()
+        project = ScratchProject.from_file(minimal_project_dir / "project.json")
+        issues = validate_project(project)
+        assert any(
+            "bcf454acf82e4504149f7ffe07081dbc.svg" in i.message
+            for i in issues
+            if i.severity == "error"
+        )
+
+
+class TestBlockReferences:
+    def test_invalid_next_reference(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["blocks"]["block1"]["next"] = "nonexistent"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any(
+            "nonexistent" in i.message
+            for i in issues
+            if i.category == "block" and i.severity == "error"
+        )
+
+    def test_invalid_parent_reference(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["blocks"]["block2"]["parent"] = "nonexistent"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any(
+            "parent" in i.message
+            for i in issues
+            if i.category == "block" and i.severity == "error"
+        )
+
+
+class TestVariableReferences:
+    def test_invalid_variable_field(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["blocks"]["block2"]["fields"]["VARIABLE"] = [
+            "missing var",
+            "nonexistent_id",
+        ]
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any(
+            "nonexistent_id" in i.message
+            for i in issues
+            if i.category == "variable"
+        )
+
+
+class TestExtensionDeclarations:
+    def test_undeclared_extension(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["blocks"]["pen_block"] = {
+            "opcode": "pen_clear",
+            "next": None,
+            "parent": None,
+            "inputs": {},
+            "fields": {},
+            "shadow": False,
+            "topLevel": True,
+        }
+        data["extensions"] = []  # pen not declared
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any(
+            "pen" in i.message and "not declared" in i.message
+            for i in issues
+            if i.severity == "warning"
+        )
+
+
+class TestCostumeIndices:
+    def test_out_of_range_index(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["currentCostume"] = 99
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any(
+            "currentCostume" in i.message
+            for i in issues
+            if i.severity == "error"
+        )
