@@ -146,3 +146,115 @@ class TestCostumeIndices:
             for i in issues
             if i.severity == "error"
         )
+
+
+class TestMetaSemver:
+    def test_valid_semver_no_issues(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["meta"] = {"semver": "3.0.0"}
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert not any("semver" in i.message for i in issues)
+
+    def test_invalid_semver(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["meta"] = {"semver": "2.0.0"}
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("semver" in i.message for i in issues if i.severity == "warning")
+
+
+class TestStageConstraints:
+    def test_stage_wrong_name(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["name"] = "NotStage"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("Stage" in i.message for i in issues if i.severity == "warning")
+
+    def test_stage_wrong_layer_order(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["layerOrder"] = 5
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("layerOrder" in i.message for i in issues if i.severity == "warning")
+
+    def test_stage_invalid_video_state(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["videoState"] = "invalid"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("videoState" in i.message for i in issues if i.severity == "warning")
+
+
+class TestSpriteConstraints:
+    def test_reserved_sprite_name(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][1]["name"] = "_stage_"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("reserved" in i.message for i in issues if i.severity == "error")
+
+    def test_sprite_invalid_rotation_style(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][1]["rotationStyle"] = "spin"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("rotationStyle" in i.message for i in issues if i.severity == "warning")
+
+    def test_sprite_zero_layer_order(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][1]["layerOrder"] = 0
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("layerOrder" in i.message for i in issues if i.severity == "warning")
+
+
+class TestAssetFormats:
+    def test_invalid_costume_asset_id(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["costumes"][0]["assetId"] = "not-a-valid-hex"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("assetId" in i.message for i in issues if i.severity == "error")
+
+    def test_invalid_costume_format(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["costumes"][0]["dataFormat"] = "tiff"
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("dataFormat" in i.message for i in issues if i.severity == "error")
+
+    def test_valid_formats_pass(self, minimal_project_data):
+        project = ScratchProject(minimal_project_data)
+        issues = validate_project(project)
+        assert not any(
+            "dataFormat" in i.message for i in issues if i.severity == "error"
+        )
+
+
+class TestBlockOpcodes:
+    def test_block_missing_opcode(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["blocks"]["bad_block"] = {
+            "next": None,
+            "parent": None,
+            "inputs": {},
+            "fields": {},
+            "shadow": False,
+            "topLevel": True,
+        }
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("opcode" in i.message for i in issues if i.severity == "error")
+
+
+class TestComments:
+    def test_long_comment_warning(self, minimal_project_data):
+        data = copy.deepcopy(minimal_project_data)
+        data["targets"][0]["comments"] = {
+            "c1": {"text": "x" * 9000, "x": 0, "y": 0, "width": 200, "height": 200}
+        }
+        project = ScratchProject(data)
+        issues = validate_project(project)
+        assert any("8000" in i.message for i in issues if i.severity == "warning")

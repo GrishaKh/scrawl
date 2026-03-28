@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from scrawl.model import ScratchProject, ValidationIssue
@@ -22,6 +23,15 @@ BUILTIN_OPCODE_PREFIXES = frozenset(
     }
 )
 
+# Valid enum values from the Scratch 3.0 spec (scratch-parser sb3_definitions.json)
+VALID_COSTUME_FORMATS = frozenset({"png", "svg", "jpeg", "jpg", "bmp", "gif"})
+VALID_SOUND_FORMATS = frozenset({"wav", "wave", "mp3"})
+VALID_ROTATION_STYLES = frozenset({"all around", "don't rotate", "left-right"})
+VALID_VIDEO_STATES = frozenset({"on", "off", "on-flipped"})
+ASSET_ID_RE = re.compile(r"^[a-fA-F0-9]{32}$")
+SEMVER_RE = re.compile(r"^3\.\d+\.\d+$")
+MAX_COMMENT_LENGTH = 8000
+
 
 def validate_project(project: ScratchProject) -> list[ValidationIssue]:
     """Run all validation checks and return a list of issues."""
@@ -34,6 +44,12 @@ def validate_project(project: ScratchProject) -> list[ValidationIssue]:
     issues.extend(_check_variable_references(project))
     issues.extend(_check_extension_declarations(project))
     issues.extend(_check_costume_indices(project))
+    issues.extend(_check_meta_semver(project))
+    issues.extend(_check_stage_constraints(project))
+    issues.extend(_check_sprite_constraints(project))
+    issues.extend(_check_asset_formats(project))
+    issues.extend(_check_block_opcodes(project))
+    issues.extend(_check_comments(project))
     return issues
 
 
@@ -348,4 +364,198 @@ def _check_costume_indices(project: ScratchProject) -> list[ValidationIssue]:
                     target_name=name,
                 )
             )
+    return issues
+
+
+def _check_meta_semver(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    meta = project.raw.get("meta", {})
+    if not isinstance(meta, dict):
+        return issues
+    semver = meta.get("semver", "")
+    if semver and not SEMVER_RE.match(semver):
+        issues.append(
+            ValidationIssue(
+                "warning",
+                "structure",
+                f"meta.semver '{semver}' does not match expected format '3.X.Y'",
+            )
+        )
+    return issues
+
+
+def _check_stage_constraints(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    stage = project.stage
+    if not stage:
+        return issues
+
+    name = stage.get("name", "")
+    if name != "Stage":
+        issues.append(
+            ValidationIssue(
+                "warning",
+                "structure",
+                f"Stage target name is '{name}', expected 'Stage'",
+                target_name=name,
+            )
+        )
+
+    layer = stage.get("layerOrder")
+    if layer is not None and layer != 0:
+        issues.append(
+            ValidationIssue(
+                "warning",
+                "structure",
+                f"Stage layerOrder is {layer}, expected 0",
+                target_name=name,
+            )
+        )
+
+    video_state = stage.get("videoState")
+    if video_state is not None and video_state not in VALID_VIDEO_STATES:
+        issues.append(
+            ValidationIssue(
+                "warning",
+                "structure",
+                f"Stage videoState '{video_state}' not in {sorted(VALID_VIDEO_STATES)}",
+                target_name=name,
+            )
+        )
+
+    return issues
+
+
+def _check_sprite_constraints(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    for target in project.targets:
+        if target.get("isStage"):
+            continue
+
+        name = target.get("name", "?")
+
+        if name == "_stage_":
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    "structure",
+                    "Sprite name '_stage_' is reserved",
+                    target_name=name,
+                )
+            )
+
+        layer = target.get("layerOrder")
+        if layer is not None and (not isinstance(layer, int) or layer < 1):
+            issues.append(
+                ValidationIssue(
+                    "warning",
+                    "structure",
+                    f"Sprite layerOrder is {layer}, expected >= 1",
+                    target_name=name,
+                )
+            )
+
+        rot = target.get("rotationStyle")
+        if rot is not None and rot not in VALID_ROTATION_STYLES:
+            issues.append(
+                ValidationIssue(
+                    "warning",
+                    "structure",
+                    f"rotationStyle '{rot}' not in {sorted(VALID_ROTATION_STYLES)}",
+                    target_name=name,
+                )
+            )
+
+    return issues
+
+
+def _check_asset_formats(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    for target in project.targets:
+        name = target.get("name", "?")
+
+        for costume in target.get("costumes", []):
+            asset_id = costume.get("assetId", "")
+            if asset_id and not ASSET_ID_RE.match(asset_id):
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        "asset",
+                        f"Costume '{costume.get('name', '?')}' assetId '{asset_id}' is not valid 32-char hex",
+                        target_name=name,
+                    )
+                )
+
+            fmt = costume.get("dataFormat", "")
+            if fmt and fmt not in VALID_COSTUME_FORMATS:
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        "asset",
+                        f"Costume '{costume.get('name', '?')}' dataFormat '{fmt}' not in {sorted(VALID_COSTUME_FORMATS)}",
+                        target_name=name,
+                    )
+                )
+
+        for sound in target.get("sounds", []):
+            asset_id = sound.get("assetId", "")
+            if asset_id and not ASSET_ID_RE.match(asset_id):
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        "asset",
+                        f"Sound '{sound.get('name', '?')}' assetId '{asset_id}' is not valid 32-char hex",
+                        target_name=name,
+                    )
+                )
+
+            fmt = sound.get("dataFormat", "")
+            if fmt and fmt not in VALID_SOUND_FORMATS:
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        "asset",
+                        f"Sound '{sound.get('name', '?')}' dataFormat '{fmt}' not in {sorted(VALID_SOUND_FORMATS)}",
+                        target_name=name,
+                    )
+                )
+
+    return issues
+
+
+def _check_block_opcodes(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    for target_name, block_id, block in project.all_blocks():
+        if not isinstance(block, dict):
+            continue
+        if "opcode" not in block:
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    "block",
+                    "Block is missing required 'opcode' field",
+                    target_name=target_name,
+                    block_id=block_id,
+                )
+            )
+    return issues
+
+
+def _check_comments(project: ScratchProject) -> list[ValidationIssue]:
+    issues = []
+    for target in project.targets:
+        name = target.get("name", "?")
+        for comment_id, comment in target.get("comments", {}).items():
+            if not isinstance(comment, dict):
+                continue
+            text = comment.get("text", "")
+            if isinstance(text, str) and len(text) > MAX_COMMENT_LENGTH:
+                issues.append(
+                    ValidationIssue(
+                        "warning",
+                        "structure",
+                        f"Comment text exceeds {MAX_COMMENT_LENGTH} characters ({len(text)} chars)",
+                        target_name=name,
+                    )
+                )
     return issues
