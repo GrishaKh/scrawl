@@ -144,6 +144,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.set_defaults(func=cmd_init)
 
+    # --- Decompile ---
+    p_decompile = subparsers.add_parser(
+        "decompile", help="Decompile project blocks to .scr text"
+    )
+    p_decompile.add_argument(
+        "project", type=Path, help="Path to .sb3 file or project directory"
+    )
+    p_decompile.add_argument(
+        "--target", "-t", default=None,
+        help="Target sprite name (default: all targets)",
+    )
+    p_decompile.add_argument(
+        "--output", "-o", type=Path, default=None,
+        help="Output file (default: stdout)",
+    )
+    p_decompile.set_defaults(func=cmd_decompile)
+
     return parser
 
 
@@ -353,6 +370,35 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"Warning: {len(errors)} validation error(s):", file=sys.stderr)
         for e in errors[:5]:
             print(f"  {e.message}", file=sys.stderr)
+
+    return 0
+
+
+def cmd_decompile(args: argparse.Namespace) -> int:
+    from scrawl.decompiler import decompile_target
+
+    project = io.load_project(args.project)
+
+    if args.target:
+        target = project.get_target_by_name(args.target)
+        if target is None:
+            print(f"Error: Target '{args.target}' not found", file=sys.stderr)
+            return 1
+        result = decompile_target(target)
+    else:
+        # Decompile all targets
+        sections: list[str] = []
+        for t in project.targets:
+            text = decompile_target(t)
+            if text.strip():
+                sections.append(f"// === {t['name']} ===\n\n{text}")
+        result = "\n".join(sections)
+
+    if args.output:
+        args.output.write_text(result, encoding="utf-8")
+        print(f"Decompiled to {args.output}")
+    else:
+        print(result, end="")
 
     return 0
 
